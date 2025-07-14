@@ -1,3 +1,63 @@
+const fs = require('fs');
+const path = require('path');
+const bodyParser = require('body-parser');
+const express = require('express');
+const app = express();
+const http = require('http').Server(app);
+const io = require('socket.io')(http, {
+  cors: {
+    origin: "*",
+    methods: ["GET", "POST"]
+  }
+});
+
+app.use(bodyParser.json());
+// 📥 Signup API
+app.post('/signup', (req, res) => {
+  const { email, password } = req.body;
+  const filePath = path.join(__dirname, 'users.json');
+
+  fs.readFile(filePath, 'utf8', (err, data) => {
+    if (err) return res.status(500).json({ message: 'Error reading file' });
+
+    const users = JSON.parse(data);
+    const userExists = users.find(user => user.email === email);
+
+    if (userExists) {
+      return res.status(400).json({ message: 'User already exists' });
+    }
+
+    users.push({ email, password });
+    fs.writeFile(filePath, JSON.stringify(users, null, 2), err => {
+      if (err) return res.status(500).json({ message: 'Error writing file' });
+      res.status(200).json({ message: 'Signup successful' });
+    });
+  });
+});
+
+// 🔐 Login API
+app.post('/login', (req, res) => {
+  const { email, password } = req.body;
+  const filePath = path.join(__dirname, 'users.json');
+
+  fs.readFile(filePath, 'utf8', (err, data) => {
+    if (err) return res.status(500).json({ message: 'Error reading file' });
+
+    const users = JSON.parse(data);
+    const user = users.find(user => user.email === email);
+
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    if (user.password !== password) {
+      return res.status(401).json({ message: 'Incorrect password' });
+    }
+
+    res.status(200).json({ message: 'Login successful' });
+  });
+});
+
 const http = require('http');
 const { Server } = require('socket.io'); // ✅ Required!
 const crypto = require('crypto'); // Optional: for encryption
@@ -22,6 +82,11 @@ const users = new Map();
 
 // ✅ Main socket connection
 io.on('connection', (socket) => {
+  // existing listeners...
+
+  socket.on('privateMessage', ({ toSocketId, message, from }) => {
+    io.to(toSocketId).emit('receiveMessage', { message, from });
+  });
   console.log(`User connected: ${socket.id}`);
 
   socket.on('login', (username) => {
